@@ -11,3 +11,5 @@ install:
 	@echo "Install files"
 	install -m 0755 init.d/etcd $(INSTALLDIR)/etc/init.d/
 	install -m 0755 bin/etcd $(INSTALLDIR)/opt/etcd/
+	install -m 0755 bin/etcdctl $(INSTALLDIR)/opt/etcd/
+	install -m 0755 bin/etcd-migrate $(INSTALLDIR)/opt/etcd/

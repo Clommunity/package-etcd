@@ -15,6 +15,7 @@ ETCDPATH="/opt/etcd"
 ETCDBIN="$ETCDPATH/$NAME"
 CONFFILE="/etc/avahi-ps-etcd.conf"
 PIDFILE="/var/run/etcd.pid"
+CURL="/usr/bin/curl"
 
 BIND_IP="0.0.0.0"
 MACHINE=$(uname -n)
@@ -35,9 +36,31 @@ test -f $CONFFILE && . $CONFFILE
 
 [ -z "$ETCD_CONNECT" ] &&  PEERS="" || PEERS="-peers $ETCD_CONNECT"
 
+remove_node() {
+  # Remove etcd database
+  rm -rf ${ETCDPATH}/machines/${MACHINE}.etcd
+  # Get information
+  my_node=($(${CURL} -s http://${PEERS}/v2/members|jq .members[]| jq -c '[.name,.id,.peerURLs[]]'|sed 's/^\[\(.*\)\]$/\1/'|sed 's/,/ /g'|grep \"${MACHINE}\"))
+  [ ! -z $my_node ] && {
+    # Need delete node.
+    ${CURL} -s http://${PEERS}/v2/members/${my_node[1]} -X DELETE
+  }  
+}
+
+add_node(){
+  # Get node in cluster
+  getnodes="$(echo $(curl -s http://10.139.40.82:4001/v2/members|jq .members[]| jq -c '[.name,.peerURLs[]]'|sed 's/^\["\(.*\)","\(.*\)"\]$/\1=\2/')|sed 's/ /,/g')"
+  # Add node to cluster
+  ${CURL} -s http://${PEERS}/v2/members -X POST -H "Content-Type: application/json" -d '{"peerURLs":["'${PUBLIC_IP}:${ETCD_PEER_PORT}'"]}'
+  echo "${MACHINE}=${PUBLIC_IP},$getnodes"
+}
+
 start() {
 	[ ! -f $ETCDBIN ] && { echo "etcd is not installed in $ETCDBIN."; exit 0; }
 	mkdir -p $ETCDPATH/machines/
+
+
+  ./etcd -name ${MACHINE} -initial-advertise-peer-urls http://${INTERNAL_IP}:  -initial-cluster sunny=http://10.139.40.20:2380,cloudy-db-1=http://10.139.40.82:2380,cloudy-db-2=http://10.139.40.87:2380,cloudy-db-3=http://10.139.40.89:2380 -initial-cluster-state existing -listen-peer-urls=http://${BIND_IP}:2380,http://${BIND_IP}:7001 -listen-client-urls=http://${BIND_IP}:2379,http://${BIND_IP}:4001 
 	$ETCDBIN -peer-bind-addr ${PUBLIC_IP}:${ETCD_PEER_PORT} -peer-addr ${PUBLIC_IP}:${ETCD_PEER_PORT} -bind-addr ${BIND_IP}:${ETCD_PORT} -addr ${BIND_IP}:${ETCD_PORT} $PEERS -data-dir $ETCDPATH/machines -name $MACHINE $OPTS >> $ETCD_LOG 2>&1 & 
 	echo $! > $PIDFILE  
 }
